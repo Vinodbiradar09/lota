@@ -10,49 +10,54 @@ class Lota {
     this.config = this.mergeConfig(config);
   }
 
-  async dispatchRequest(url: any, config: any) {
-    console.log("config", config);
+  async dispatchRequest({ url, config }: any) {
     const finalConfig = this.mergeConfig(config);
-    console.log("final", finalConfig);
-
     const { baseURL, ...nativeConfig } = finalConfig;
-    console.log("b", baseURL, nativeConfig);
-    const response = await fetch(`${baseURL}${url}`, {
-      ...nativeConfig,
-    });
-    const data = await response.json();
-    return data;
+    const abortController = new AbortController();
+    const timeout = finalConfig.timeout;
+    let timeoutId;
+    if (timeout) {
+      timeoutId = setInterval(() => abortController.abort(), timeout);
+    }
+    try {
+      const res = await fetch(`${baseURL}${url}`, {
+        ...nativeConfig,
+        signal: abortController.signal,
+      });
+      return res;
+    } finally {
+      if (timeout) clearInterval(timeoutId);
+    }
   }
 
   async get(url: string, config: any) {
-    const data = await this.dispatchRequest(url, config);
-    console.log("data", data);
+    return this.dispatchRequest({ url, config });
   }
 
   async post(url: string, data: any, config: any) {
-    const finalConfig = this.mergeConfig(config);
-    const { baseURL, ...nativeConfig } = finalConfig;
-    const packed = this.packPostConfig(nativeConfig, data);
-    console.log("packed", packed);
-    const r = await this.dispatchRequest(url, packed);
-    console.log("rr", r);
-    // const res = await fetch(`${baseURL}${url}`, {
-    //   method: "POST",
-    //   body: JSON.stringify(data),
-    //   headers: {
-    //     ...nativeConfig.headers,
-    //   },
-    // });
-    // const d = await res.json();
-    // console.log("ddd", d);
+    return this.dispatchRequest({
+      url,
+      config: { ...config, method: "POST", body: JSON.stringify(data) },
+    });
   }
 
-  private packPostConfig(config: any, data: any) {
-    return {
-      ...config,
-      method: "POST",
-      body: JSON.stringify(data),
-    };
+  async delete(url: string, config: any) {
+    return this.dispatchRequest({
+      url,
+      config: { ...config, method: "DELETE" },
+    });
+  }
+  async put(url: string, data: any, config: any) {
+    return this.dispatchRequest({
+      url,
+      config: { ...config, method: "PUT", body: JSON.stringify(data) },
+    });
+  }
+  async patch(url: string, data: any, config: any) {
+    return this.dispatchRequest({
+      url,
+      config: { ...config, method: "PATCH", body: JSON.stringify(data) },
+    });
   }
 
   private mergeConfig(config: any) {
