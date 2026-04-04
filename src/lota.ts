@@ -6,61 +6,107 @@ class Lota {
       "Content-Type": "application/json",
     },
   };
+
+  private reqInterceptors: any = [];
+  private resInterceptors: any = [];
+
   constructor(config: any) {
-    this.config = this.mergeConfig(config);
+    this.config = this.mergeConflict(config);
+  }
+
+  async request({ path, config }: any) {
+    console.log("path and config for request", path, config);
+    const { baseURL, params, ...nativeConfig } = this.mergeConflict(config);
+    const url = new URL(`${baseURL}${path}`);
+    if (typeof params !== "undefined") {
+      Object.keys(params).forEach((key) =>
+        url.searchParams.append(key, params[key]),
+      );
+    }
+    const chain = [
+      ...this.reqInterceptors,
+      {
+        successFn: this.dispatchRequest.bind(this),
+      },
+      ...this.resInterceptors,
+    ];
+    let promise = Promise.resolve({ url, config: nativeConfig });
+    for (const { successFn, failFn } of chain) {
+      promise = promise.then(
+        (res) => {
+          try {
+            return successFn(res);
+          } catch (err) {
+            if (failFn) {
+              return failFn(err);
+            }
+            return Promise.reject(err);
+          }
+        },
+        (err) => {
+          if (failFn) {
+            return failFn(err);
+          }
+          return Promise.reject(err);
+        },
+      );
+    }
+    return promise as Promise<any>;
   }
 
   async dispatchRequest({ url, config }: any) {
-    const finalConfig = this.mergeConfig(config);
-    const { baseURL, ...nativeConfig } = finalConfig;
+    console.log("the ", url, config);
+    const { timeout, ...nativeConfig } = config;
     const abortController = new AbortController();
-    const timeout = finalConfig.timeout;
     let timeoutId;
     if (timeout) {
-      timeoutId = setInterval(() => abortController.abort(), timeout);
+      timeoutId = setTimeout(() => abortController.abort(), timeout);
     }
     try {
-      const res = await fetch(`${baseURL}${url}`, {
+      const res = await fetch(`${url}`, {
         ...nativeConfig,
         signal: abortController.signal,
       });
       return res;
     } finally {
-      if (timeout) clearInterval(timeoutId);
+      if (timeoutId) clearInterval(timeoutId);
     }
   }
 
-  async get(url: string, config: any) {
-    return this.dispatchRequest({ url, config });
+  async get(path: string, config: any) {
+    return this.request({ path, config });
+    // return this.dispatchRequest({ path, config });
   }
 
-  async post(url: string, data: any, config: any) {
+  async post(path: string, data: any, config: any) {
     return this.dispatchRequest({
-      url,
+      path,
       config: { ...config, method: "POST", body: JSON.stringify(data) },
     });
   }
 
-  async delete(url: string, config: any) {
+  async delete(path: string, config: any) {
     return this.dispatchRequest({
-      url,
+      path,
       config: { ...config, method: "DELETE" },
     });
   }
-  async put(url: string, data: any, config: any) {
+
+  async put(path: string, data: any, config: any) {
     return this.dispatchRequest({
-      url,
+      path,
       config: { ...config, method: "PUT", body: JSON.stringify(data) },
     });
   }
-  async patch(url: string, data: any, config: any) {
+
+  async patch(path: string, data: any, config: any) {
     return this.dispatchRequest({
-      url,
+      path,
       config: { ...config, method: "PATCH", body: JSON.stringify(data) },
     });
   }
 
-  private mergeConfig(config: any) {
+  private mergeConflict(config: any) {
     return {
       ...this.config,
       ...config,
@@ -70,6 +116,13 @@ class Lota {
       },
     };
   }
+
+  async requestInterceptors(successFn: Function, failFn: Function) {
+    this.reqInterceptors.push({ successFn, failFn });
+  }
+  async responseInterceptors(successFn: Function, failFn: Function) {
+    this.resInterceptors.push({ successFn, failFn });
+  }
 }
 
 const lota = {
@@ -77,5 +130,4 @@ const lota = {
     return new Lota(config);
   },
 };
-
 export { lota };
