@@ -54,19 +54,19 @@ main();
 
 // api.post(
 //   "/users",
-//   { name: "testing", email: "test123@gmail.com" },
+//   { name: "virat", email: "virat@gmail.com" },
 //   { headers: { "Content-Type": "application/json" }, timeout: 200 },
 // );
 
 // api.put(
 //   "/users/1",
-//   { name: "dhurandharss", email: "dhurandharss@gmail.com" },
+//   { name: "aditya", email: "aditya@gmail.com" },
 //   { headers: { "Content-Type": "application/json" } },
 // );
 
-// api.delete("/users/21", { headers: { "Content-Type": "application/json" } });
-// api.patch(
-//   "/users/5",
-//   { name: "dharsaditya", email: "dharsaditya@gmail.com" },
-//   { headers: { "Content-Type": "application/json" }, timeout: 100 },
-// );
+api.delete("/users/12", { headers: { "Content-Type": "application/json" } });
+api.patch(
+  "/users/5",
+  { name: "aditya_dhar", email: "adityadhar@gmail.com" },
+  { headers: { "Content-Type": "application/json" }, timeout: 100 },
+);

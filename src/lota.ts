@@ -75,32 +75,31 @@ class Lota {
 
   async get(path: string, config: any) {
     return this.request({ path, config });
-    // return this.dispatchRequest({ path, config });
   }
 
   async post(path: string, data: any, config: any) {
-    return this.dispatchRequest({
+    return this.request({
       path,
       config: { ...config, method: "POST", body: JSON.stringify(data) },
     });
   }
 
   async delete(path: string, config: any) {
-    return this.dispatchRequest({
+    return this.request({
       path,
       config: { ...config, method: "DELETE" },
     });
   }
 
   async put(path: string, data: any, config: any) {
-    return this.dispatchRequest({
+    return this.request({
       path,
       config: { ...config, method: "PUT", body: JSON.stringify(data) },
     });
   }
 
   async patch(path: string, data: any, config: any) {
-    return this.dispatchRequest({
+    return this.request({
       path,
       config: { ...config, method: "PATCH", body: JSON.stringify(data) },
     });
