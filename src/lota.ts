@@ -7,29 +7,36 @@ class Lota {
     },
   };
 
-  private reqInterceptors: any = [];
-  private resInterceptors: any = [];
+  public interceptors = {
+    request: new Interceptors(),
+    response: new Interceptors(),
+  };
 
   constructor(config: any) {
-    this.config = this.mergeConflict(config);
+    this.config = this.mergeConfig(config);
   }
 
   async request({ path, config }: any) {
-    console.log("path and config for request", path, config);
-    const { baseURL, params, ...nativeConfig } = this.mergeConflict(config);
-    const url = new URL(`${baseURL}${path}`);
+    const { baseURL, params, ...nativeConfig } = this.mergeConfig(config);
+    console.log("baseURL", baseURL);
+    console.log("params", params);
+    console.log("nativeConfig", nativeConfig);
+    const url = new URL(path, baseURL);
     if (typeof params !== "undefined") {
-      Object.keys(params).forEach((key) =>
-        url.searchParams.append(key, params[key]),
-      );
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, String(value));
+      });
     }
     const chain = [
-      ...this.reqInterceptors,
-      {
-        successFn: this.dispatchRequest.bind(this),
-      },
-      ...this.resInterceptors,
+      { successFn: this.dispatchRequest.bind(this), failFn: undefined },
     ];
+    this.interceptors.request.handlers.forEach((handler) => {
+      chain.unshift(handler);
+    });
+    this.interceptors.response.handlers.forEach((handler) => {
+      chain.push(handler);
+    });
+
     let promise = Promise.resolve({ url, config: nativeConfig });
     for (const { successFn, failFn } of chain) {
       promise = promise.then(
@@ -38,6 +45,7 @@ class Lota {
             return successFn(res);
           } catch (err) {
             if (failFn) {
+              // @ts-ignore
               return failFn(err);
             }
             return Promise.reject(err);
@@ -45,6 +53,7 @@ class Lota {
         },
         (err) => {
           if (failFn) {
+            // @ts-ignore
             return failFn(err);
           }
           return Promise.reject(err);
@@ -55,7 +64,7 @@ class Lota {
   }
 
   async dispatchRequest({ url, config }: any) {
-    console.log("the ", url, config);
+    console.log("url and config", url, config);
     const { timeout, ...nativeConfig } = config;
     const abortController = new AbortController();
     let timeoutId;
@@ -63,13 +72,13 @@ class Lota {
       timeoutId = setTimeout(() => abortController.abort(), timeout);
     }
     try {
-      const res = await fetch(`${url}`, {
+      const res = await fetch(url, {
         ...nativeConfig,
         signal: abortController.signal,
       });
       return res;
     } finally {
-      if (timeoutId) clearInterval(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
@@ -105,7 +114,7 @@ class Lota {
     });
   }
 
-  private mergeConflict(config: any) {
+  mergeConfig(config: any) {
     return {
       ...this.config,
       ...config,
@@ -115,18 +124,22 @@ class Lota {
       },
     };
   }
-
-  async requestInterceptors(successFn: Function, failFn: Function) {
-    this.reqInterceptors.push({ successFn, failFn });
-  }
-  async responseInterceptors(successFn: Function, failFn: Function) {
-    this.resInterceptors.push({ successFn, failFn });
-  }
 }
-
 const lota = {
   create(config: any) {
     return new Lota(config);
   },
 };
+
 export { lota };
+
+class Interceptors {
+  public handlers: any[];
+  constructor() {
+    this.handlers = [];
+  }
+
+  use(successFn: Function, failFn: Function) {
+    this.handlers.push({ successFn, failFn });
+  }
+}
