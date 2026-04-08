@@ -21,7 +21,7 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   function (response: any) {
-    console.log("this is res successfn");
+    console.log("this is res successfn", response);
     return response;
   },
   function (err: any) {
@@ -40,7 +40,8 @@ async function main() {
     },
     timeout: 200,
   });
-  const data = await res1.json();
+  console.log("res1", res1);
+  const data = await res1.data;
   console.log("data", data);
 
   // get all user
@@ -49,26 +50,27 @@ async function main() {
       "X-Custom-Header": "application/xml",
     },
   });
-  const data2 = await res2?.json();
+  console.log("res2", res2);
+  const data2 = await res2.data;
   console.log("data2", data2);
 }
 main();
 
-api.post(
-  "/users",
-  { name: "arjun", email: "arjun@gmail.com" },
-  { headers: { "Content-Type": "application/json" }, timeout: 200 },
-);
+// api.post(
+//   "/users",
+//   { name: "arjun", email: "arjun@gmail.com" },
+//   { headers: { "Content-Type": "application/json" }, timeout: 200 },
+// );
 
-api.put(
-  "/users/1",
-  { name: "adityad", email: "adityad@gmail.com" },
-  { headers: { "Content-Type": "application/json" } },
-);
+// api.put(
+//   "/users/1",
+//   { name: "adityad", email: "adityad@gmail.com" },
+//   { headers: { "Content-Type": "application/json" } },
+// );
 
-api.delete("/users/6", { headers: { "Content-Type": "application/json" } });
-api.patch(
-  "/users/3",
-  { name: "harkiratsingh", email: "harkiratsingh@gmail.com" },
-  { headers: { "Content-Type": "application/json" }, timeout: 100 },
-);
+// api.delete("/users/6", { headers: { "Content-Type": "application/json" } });
+// api.patch(
+//   "/users/3",
+//   { name: "harkiratsingh", email: "harkiratsingh@gmail.com" },
+//   { headers: { "Content-Type": "application/json" }, timeout: 100 },
+// );
