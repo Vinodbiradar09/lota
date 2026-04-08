@@ -1,4 +1,4 @@
-import { lota } from "./lota.js";
+import lota from "./index.js";
 
 const api = lota.create({
   baseURL: "http://localhost:3000",
@@ -58,19 +58,19 @@ main();
 
 // api.post(
 //   "/users",
-//   { name: "arjun", email: "arjun@gmail.com" },
+//   { name: "raj", email: "raj@gmail.com" },
 //   { headers: { "Content-Type": "application/json" }, timeout: 200 },
 // );
 
 // api.put(
-//   "/users/1",
-//   { name: "adityad", email: "adityad@gmail.com" },
+//   "/users/28",
+//   { name: "rajverma", email: "rajverma@gmail.com" },
 //   { headers: { "Content-Type": "application/json" } },
 // );
 
-// api.delete("/users/6", { headers: { "Content-Type": "application/json" } });
+// api.delete("/users/8", { headers: { "Content-Type": "application/json" } });
 // api.patch(
-//   "/users/3",
-//   { name: "harkiratsingh", email: "harkiratsingh@gmail.com" },
+//   "/users/28",
+//   { name: "raj_verma", email: "raj_verma@gmail.com" },
 //   { headers: { "Content-Type": "application/json" }, timeout: 100 },
 // );
