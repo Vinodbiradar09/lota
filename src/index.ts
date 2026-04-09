@@ -1,12 +1,18 @@
 import { Lota } from "./core/Lota.js";
-import type { LotaRequestConfig } from "./types/index.js";
+import { LotaError } from "./types/index.js";
+import type {
+  LotaRequestConfig,
+  LotaResponse,
+  LotaInstance,
+} from "./types/index.js";
 
 const defaultInstance = new Lota({});
 const lota = Object.assign(defaultInstance, {
-  create(config: LotaRequestConfig = {}) {
+  create(config: LotaRequestConfig = {}): Lota {
     return new Lota(config);
   },
 });
 
 export default lota;
-export { lota };
+export { lota, Lota, LotaError };
+export type { LotaRequestConfig, LotaResponse, LotaInstance };

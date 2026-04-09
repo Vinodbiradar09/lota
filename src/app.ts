@@ -58,19 +58,28 @@ main();
 
 // api.post(
 //   "/users",
-//   { name: "raj", email: "raj@gmail.com" },
+//   { name: "mastan", email: "mastan@gmail.com" },
 //   { headers: { "Content-Type": "application/json" }, timeout: 200 },
 // );
 
 // api.put(
-//   "/users/28",
-//   { name: "rajverma", email: "rajverma@gmail.com" },
+//   "/users/30",
+//   { name: "mastans", email: "mastans@gmail.com" },
 //   { headers: { "Content-Type": "application/json" } },
 // );
 
-// api.delete("/users/8", { headers: { "Content-Type": "application/json" } });
-// api.patch(
-//   "/users/28",
-//   { name: "raj_verma", email: "raj_verma@gmail.com" },
-//   { headers: { "Content-Type": "application/json" }, timeout: 100 },
-// );
+// api.delete("/users/9", { headers: { "Content-Type": "application/json" } });
+api.patch(
+  "/users/30",
+  { name: "mast", email: "mast@gmail.com" },
+  { headers: { "Content-Type": "application/json" }, timeout: 100 },
+);
+
+// api.request({
+//   url: "users/28",
+//   data: { name: "letsgos", email: "letsgos@gmail.com" },
+//   headers: {
+//     "Content-Type": "application/json",
+//   },
+//   method: "PATCH",
+// });

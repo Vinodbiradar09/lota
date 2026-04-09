@@ -1,6 +1,15 @@
 import { Interceptors } from "./Interceptors.js";
-import { type InterceptorHandler } from "../types/index.js";
-import type { LotaRequestConfig, LotaResponse } from "../types/index.js";
+import {
+  LotaError,
+  type BodyMethod,
+  type InterceptorHandler,
+  type LotaInstance,
+  type LotaRequestConfig,
+  type LotaResponse,
+  type NoBodyMethod,
+} from "../types/index.js";
+
+export interface Lota extends LotaInstance {}
 
 export class Lota {
   private config: LotaRequestConfig = {};
@@ -12,10 +21,10 @@ export class Lota {
     this.config = this.mergeConfig(config, {});
   }
 
-  async request<T = any>(
+  async request<T = unknown>(
     config: LotaRequestConfig & { url: string },
   ): Promise<LotaResponse<T>> {
-    const mergeConfig = this.mergeConfig(config);
+    const mergedConfig = this.mergeConfig(config);
     // the chain is an ordered pipeline
     // [request interceptors] → dispatchRequest → [response interceptors]
     //
@@ -27,14 +36,14 @@ export class Lota {
       { fulfilled: this.dispatchRequest.bind(this), rejected: undefined },
     ];
 
-    this.interceptors.request.handlers.forEach((handler) => {
-      if (handler) chain.unshift(handler);
+    this.interceptors.request.handlers.forEach((h) => {
+      if (h) chain.unshift(h);
     });
-    this.interceptors.response.handlers.forEach((handler) => {
-      if (handler) chain.push(handler);
+    this.interceptors.response.handlers.forEach((h) => {
+      if (h) chain.push(h);
     });
 
-    let promise: Promise<unknown> = Promise.resolve(mergeConfig);
+    let promise: Promise<unknown> = Promise.resolve(mergedConfig);
     for (const { fulfilled, rejected } of chain) {
       promise = promise.then(
         (res) => {
@@ -62,12 +71,14 @@ export class Lota {
     const {
       url,
       baseURL,
-      data: _data,
-      timeout,
       params,
+      timeout,
+      data: _data, // already serialised into `body` by the method helpers
       signal: userSignal,
       ...nativeConfig
     } = config;
+    // URL is constructed here, after all request interceptors have run,
+    // so interceptor mutations to url / baseURL / params are respected.
     const fullUrl = new URL(url ?? "", baseURL);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -90,7 +101,7 @@ export class Lota {
         signal,
       });
       const contentType = response.headers.get("content-type");
-      let responseData: any = null;
+      let responseData: unknown = null;
       try {
         if (contentType?.includes("application/json")) {
           const text = await response.text();
@@ -110,69 +121,25 @@ export class Lota {
         rawResponse: response,
       };
       if (!response.ok) {
-        return Promise.reject(lotaResponse);
+        throw new LotaError(
+          `Request failed with status ${response.status}`,
+          lotaResponse,
+          config,
+        );
       }
       return lotaResponse;
     } catch (err) {
-      return Promise.reject(err);
+      if (err instanceof LotaError) throw err;
+      const message =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Request aborted"
+          : err instanceof Error
+            ? err.message
+            : "Network error";
+      throw new LotaError(message, null, config);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
     }
-  }
-
-  // HTTP helpers
-  // keep config as optional on every method :- api.get("/users") just workss
-  async get<T = any>(url: string, config: LotaRequestConfig = {}) {
-    return this.request<T>({ ...config, url, method: "GET" });
-  }
-
-  async delete<T = any>(url: string, config: LotaRequestConfig = {}) {
-    return this.request<T>({ ...config, url, method: "DELETE" });
-  }
-
-  // post/put/patch: explicit `data` arg takes precedence over config.data.
-  // both styles work:
-  //   api.post('/users', { name: 'shambavi' })
-  //   api.post('/users', null, { data: { name: 'shambavi' } })
-  async post<T = any>(
-    url: string,
-    data?: unknown,
-    config: LotaRequestConfig = {},
-  ) {
-    const body = data ?? config.data;
-    return this.request<T>({
-      ...config,
-      url,
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-  }
-
-  async put<T = any>(
-    url: string,
-    data?: unknown,
-    config: LotaRequestConfig = {},
-  ) {
-    const body = data ?? config.data;
-    return this.request<T>({
-      ...config,
-      url,
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
-  }
-  async patch<T = any>(
-    url: string,
-    data?: unknown,
-    config: LotaRequestConfig = {},
-  ) {
-    const body = data ?? config.data;
-    return this.request<T>({
-      ...config,
-      url,
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
   }
 
   private mergeConfig(
@@ -182,7 +149,12 @@ export class Lota {
     return {
       ...base,
       ...config,
-      timeout: config.timeout ?? 1000,
+      ...(typeof config.timeout !== "undefined"
+        ? { timeout: config.timeout }
+        : typeof base.timeout !== "undefined"
+          ? { timeout: base.timeout }
+          : {}),
+      // deep-merge headers so instance-level defaults are never silently dropped.
       headers: {
         ...(base?.headers ?? {}),
         ...(config?.headers ?? {}),
@@ -190,3 +162,42 @@ export class Lota {
     };
   }
 }
+const NO_BODY_METHODS = [
+  "get",
+  "head",
+  "delete",
+  "options",
+] as const satisfies readonly NoBodyMethod[];
+
+const BODY_METHODS = [
+  "post",
+  "put",
+  "patch",
+] as const satisfies readonly BodyMethod[];
+
+type LotaProto = Lota & Record<string, (...args: any[]) => any>;
+
+NO_BODY_METHODS.forEach((method) => {
+  (Lota.prototype as LotaProto)[method] = function (
+    url: string,
+    config: LotaRequestConfig = {},
+  ): Promise<LotaResponse<any>> {
+    return this.request({ ...config, url, method: method.toUpperCase() });
+  };
+});
+
+BODY_METHODS.forEach((method) => {
+  (Lota.prototype as LotaProto)[method] = function (
+    url: string,
+    data?: unknown,
+    config: LotaRequestConfig = {},
+  ): Promise<LotaResponse<any>> {
+    const body = data ?? config.data;
+    return this.request({
+      ...config,
+      url,
+      method: method.toUpperCase(),
+      body: JSON.stringify(body),
+    });
+  };
+});
