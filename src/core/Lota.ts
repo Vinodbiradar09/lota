@@ -1,3 +1,5 @@
+import { buildRequestUrl } from "./BuildRequestUrl.js";
+import { serializeBody } from "./SerializeBody.js";
 import { computeDelay } from "./ComputeDelay.js";
 import { Interceptors } from "./Interceptors.js";
 import {
@@ -23,7 +25,7 @@ export class Lota {
   };
   // deduplication tracking
   private readonly inFlight = new Map<string, AbortController>();
-  constructor(config: LotaRequestConfig) {
+  constructor(config: LotaRequestConfig = {}) {
     this.config = this.mergeConfig(config, {});
   }
 
@@ -71,7 +73,9 @@ export class Lota {
     return promise as Promise<LotaResponse<T>>;
   }
 
-  private async executeWithRetry(config: LotaRequestConfig) {
+  private async executeWithRetry(
+    config: LotaRequestConfig,
+  ): Promise<LotaResponse> {
     const retryCfg: RetryConfig | false =
       config.retry === false ? false : (config.retry ?? false);
     if (retryCfg === false || retryCfg.times <= 0) {
@@ -105,21 +109,20 @@ export class Lota {
       url,
       baseURL,
       params,
+      arrayFormat,
       timeout,
       retry: _retry, // retry config consumed by executeWithRetry, never pass to fetch
       dedupeKey,
       data: _data, // already serialised into `body` by the method helpers
+      validateStatus,
+      responseType,
       signal: userSignal,
       ...nativeConfig
     } = config;
     // URL is constructed here, after all request interceptors have run,
     // so interceptor mutations to url / baseURL / params are respected.
-    const fullUrl = new URL(url ?? "", baseURL);
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        fullUrl.searchParams.append(key, String(value));
-      });
-    }
+    const fullUrl = buildRequestUrl(url ?? "", baseURL, params, arrayFormat);
+
     const abortController = new AbortController();
     if (dedupeKey) {
       const previous = this.inFlight.get(dedupeKey);
@@ -147,11 +150,28 @@ export class Lota {
       const contentType = response.headers.get("content-type");
       let responseData: unknown = null;
       try {
-        if (contentType?.includes("application/json")) {
+        const rt = responseType ?? "auto";
+        if (rt === "stream") {
+          // return the raw ReadableStream caller owns reading it.
+          // do not call any other body method after this or it will throw.
+          responseData = response.body;
+        } else if (rt === "blob") {
+          responseData = await response.blob();
+        } else if (rt === "arrayBuffer") {
+          responseData = await response.arrayBuffer();
+        } else if (rt === "text") {
+          responseData = await response.text();
+        } else if (rt === "json") {
           const text = await response.text();
           responseData = text ? JSON.parse(text) : {};
         } else {
-          responseData = await response.text();
+          // 'auto' — sniff Content-Type
+          if (contentType?.includes("application/json")) {
+            const text = await response.text();
+            responseData = text ? JSON.parse(text) : {};
+          } else {
+            responseData = await response.text();
+          }
         }
       } catch {
         // malformed body keep null, HTTP error info is still preserved below.
@@ -165,7 +185,13 @@ export class Lota {
         config: nativeConfig,
         rawResponse: response,
       };
-      if (!response.ok) {
+      // determine success using validateStatus if provided, otherwise the
+      // default behaviour matches fetch's own `response.ok` (200–299).
+      // This lets callers treat 304, 206, or any custom status as success.
+      const isSuccess = validateStatus
+        ? validateStatus(response.status)
+        : response.ok;
+      if (!isSuccess) {
         throw new LotaError(
           `Request failed with status ${response.status}`,
           lotaResponse,
@@ -184,6 +210,7 @@ export class Lota {
       throw new LotaError(message, null, config);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      // always clean up whether the request succeeded, errored, or was aborted.
       if (dedupeKey && this.inFlight.get(dedupeKey) === abortController) {
         this.inFlight.delete(dedupeKey);
       }
@@ -248,12 +275,17 @@ BODY_METHODS.forEach((method) => {
     data?: unknown,
     config: LotaRequestConfig = {},
   ): Promise<LotaResponse<any>> {
-    const body = data ?? config.data;
+    const raw = data ?? config.data;
+    const { body, headers: bodyHeaders } = serializeBody(raw);
     return this.request({
       ...config,
       url,
+      headers: {
+        ...bodyHeaders,
+        ...(config.headers ?? {}),
+      },
       method: method.toUpperCase(),
-      body: JSON.stringify(body),
+      body,
     });
   };
 });

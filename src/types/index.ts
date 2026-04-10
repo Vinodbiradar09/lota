@@ -47,8 +47,37 @@ export interface LotaRequestConfig extends RequestInit {
   baseURL?: string;
   /** request timeout in milliseconds. `undefined` = no timeout. */
   timeout?: number;
-  /** query string parameters appended to the URL. */
-  params?: Record<string, string | number | boolean>;
+  /** query string parameters appended to the URL.
+   * arrays and nested objects are supported see `arrayFormat` for array control.
+   * Null and undefined values are silently skipped.
+   * Nested objects use dot notation: `{ filter: { status: 'active' } }` → `filter.status=active`.
+   */
+  params?: Record<
+    string,
+    | string
+    | number
+    | boolean
+    | null
+    | undefined
+    | string[]
+    | number[]
+    | boolean[]
+    | Record<string, string | number | boolean | null | undefined>
+  >;
+  /**
+   * controls how array values in `params` are serialised into the query string.
+   *
+   * - `'repeat'`  — `ids=1&ids=2&ids=3`     (default — most REST APIs)
+   * - `'comma'`   — `ids=1,2,3`             (some APIs / GraphQL)
+   * - `'bracket'` — `ids[]=1&ids[]=2`       (PHP / Laravel style)
+   *
+   * @default 'repeat'
+   *
+   * @example
+   * api.get('/users', { params: { ids: [1, 2, 3] }, arrayFormat: 'bracket' })
+   * // → /users?ids[]=1&ids[]=2&ids[]=3
+   */
+  arrayFormat?: "repeat" | "comma" | "bracket";
   /**
    * explicit header map. Merged on top of instance-level headers.
    * typed as `Record<string, string>` (not HeadersInit) so interceptors
@@ -75,6 +104,8 @@ export interface LotaRequestConfig extends RequestInit {
 
   dedupeKey?: string;
   retry?: RetryConfig | false;
+  validateStatus?: (status: number) => boolean;
+  responseType?: "json" | "text" | "blob" | "arrayBuffer" | "stream" | "auto";
 }
 
 export interface LotaResponse<T = unknown> {
@@ -89,6 +120,11 @@ export interface LotaResponse<T = unknown> {
   /** the raw fetch() Response object for low-level access. */
   rawResponse: Response;
 }
+
+export type SerializedBody = {
+  body: BodyInit | null;
+  headers: Record<string, string>;
+};
 
 export class LotaError<T = unknown> extends Error {
   constructor(
@@ -148,6 +184,17 @@ export interface LotaInstance {
     config?: LotaRequestConfig,
   ): Promise<LotaResponse<T>>;
 }
+
+export type ParamValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | string[]
+  | number[]
+  | boolean[]
+  | Record<string, string | number | boolean | null | undefined>;
 
 /** methods that take no request body. */
 export type NoBodyMethod = "get" | "head" | "delete" | "options";

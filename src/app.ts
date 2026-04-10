@@ -69,11 +69,11 @@ main();
 // );
 
 // api.delete("/users/9", { headers: { "Content-Type": "application/json" } });
-api.patch(
-  "/users/30",
-  { name: "mast", email: "mast@gmail.com" },
-  { headers: { "Content-Type": "application/json" }, timeout: 100 },
-);
+// api.patch(
+//   "/users/30",
+//   { name: "mast", email: "mast@gmail.com" },
+//   { headers: { "Content-Type": "application/json" }, timeout: 100 },
+// );
 
 // api.request({
 //   url: "users/28",
