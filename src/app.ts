@@ -83,3 +83,14 @@ api.patch(
 //   },
 //   method: "PATCH",
 // });
+
+// const controller = new AbortController();
+
+// api.patch(
+//   "/user",
+//   {},
+//   {
+//     signal: AbortSignal.timeout(4000),
+//   },
+// );
+// controller.abort();

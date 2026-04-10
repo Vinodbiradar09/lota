@@ -17,6 +17,8 @@ export class Lota {
     request: new Interceptors<LotaRequestConfig>(),
     response: new Interceptors<LotaResponse>(),
   };
+  // deduplication tracking
+  private readonly inFlight = new Map<string, AbortController>();
   constructor(config: LotaRequestConfig) {
     this.config = this.mergeConfig(config, {});
   }
@@ -73,6 +75,7 @@ export class Lota {
       baseURL,
       params,
       timeout,
+      dedupeKey,
       data: _data, // already serialised into `body` by the method helpers
       signal: userSignal,
       ...nativeConfig
@@ -86,6 +89,15 @@ export class Lota {
       });
     }
     const abortController = new AbortController();
+    if (dedupeKey) {
+      const previous = this.inFlight.get(dedupeKey);
+      if (previous) {
+        // Abort the previous request it will throw LotaError("Request aborted")
+        // which CancelController.isCancelError() catches cleanly.
+        previous.abort();
+      }
+      this.inFlight.set(dedupeKey, abortController);
+    }
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     if (timeout) {
       timeoutId = setTimeout(() => abortController.abort(), timeout);
@@ -110,6 +122,7 @@ export class Lota {
           responseData = await response.text();
         }
       } catch {
+        // malformed body keep null, HTTP error info is still preserved below.
         responseData = null;
       }
       const lotaResponse: LotaResponse = {
@@ -139,6 +152,9 @@ export class Lota {
       throw new LotaError(message, null, config);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
+      if (dedupeKey && this.inFlight.get(dedupeKey) === abortController) {
+        this.inFlight.delete(dedupeKey);
+      }
     }
   }
 

@@ -23,6 +23,20 @@ export interface LotaRequestConfig extends RequestInit {
    * stripped before forwarding to `fetch()` so it never leaks into RequestInit.
    */
   data?: unknown;
+  /**
+   * deduplication key. When two requests share the same `dedupeKey` on the
+   * same instance, the first is aborted the moment the second is dispatched.
+   * supersedes the previous one.
+   *
+   * @example
+   * // Only the last keystroke's request survives:
+   * api.get('/search', { params: { q }, dedupeKey: 'search' })
+   *
+   * the aborted request throws a LotaError that CancelController.isCancelError()
+   * returns true for so you can silently swallow it in your catch block.
+   */
+
+  dedupeKey?: string;
 }
 
 export interface LotaResponse<T = unknown> {
