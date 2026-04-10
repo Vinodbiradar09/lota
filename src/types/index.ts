@@ -1,6 +1,43 @@
+export const RETRY_DEFAULT_DELAY = 300;
+export const RETRY_DEFAULT_ON = [408, 429, 500, 502, 503, 504];
+
 export interface InterceptorHandler<V> {
   fulfilled: (value: V) => V | Promise<V>;
   rejected?: ((error: unknown) => unknown) | undefined;
+}
+
+export interface RetryConfig {
+  /**
+   * number of retry attempts after the initial request fails.
+   * `3` means up to 4 total attempts (1 initial + 3 retries).
+   * @default 0 (no retries)
+   */
+  times: number;
+  /**
+   * base delay in milliseconds before the first retry.
+   * with exponential backoff: attempt 1 → delay, attempt 2 → delay×2, attempt 3 → delay×4.
+   * @default 300
+   */
+  delay?: number;
+  /**
+   * HTTP status codes that should trigger a retry.
+   * client errors (4xx except 408/429) are excluded by default retrying won't help.
+   * @default [408, 429, 500, 502, 503, 504]
+   */
+  on?: number[];
+  /**
+   * backoff strategy.
+   * - `'exponential'`: delay doubles with each attempt
+   * - `'fixed'`: same delay between every attempt
+   * @default 'exponential'
+   */
+  backoff?: "exponential" | "fixed";
+  /**
+   * Add random ±25% jitter to the delay to avoid thundering-herd when many
+   * clients retry simultaneously after a server recovers.
+   * @default true
+   */
+  jitter?: boolean;
 }
 
 export interface LotaRequestConfig extends RequestInit {
@@ -37,6 +74,7 @@ export interface LotaRequestConfig extends RequestInit {
    */
 
   dedupeKey?: string;
+  retry?: RetryConfig | false;
 }
 
 export interface LotaResponse<T = unknown> {

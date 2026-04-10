@@ -5,6 +5,7 @@ import type {
   LotaRequestConfig,
   LotaResponse,
   LotaInstance,
+  RetryConfig,
 } from "./types/index.js";
 
 const defaultInstance = new Lota({});
@@ -14,6 +15,6 @@ const lota = Object.assign(defaultInstance, {
   },
 });
 
-export type { LotaRequestConfig, LotaResponse, LotaInstance };
+export type { LotaRequestConfig, LotaResponse, LotaInstance, RetryConfig };
 export { lota, Lota, LotaError, CancelController };
 export default lota;
