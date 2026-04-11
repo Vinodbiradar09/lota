@@ -1,5 +1,5 @@
 import { CancelController } from "./core/CancelController.js";
-import { LotaError } from "./types/index.js";
+import { LotaError, isLotaError } from "./types/index.js";
 import { Lota } from "./core/Lota.js";
 import type {
   LotaRequestConfig,
@@ -16,5 +16,5 @@ const lota = Object.assign(defaultInstance, {
 });
 
 export type { LotaRequestConfig, LotaResponse, LotaInstance, RetryConfig };
-export { lota, Lota, LotaError, CancelController };
+export { lota, Lota, LotaError, CancelController, isLotaError };
 export default lota;

@@ -19,13 +19,26 @@ export interface Lota extends LotaInstance {}
 
 export class Lota {
   private config: LotaRequestConfig = {};
+
   public interceptors = {
     request: new Interceptors<LotaRequestConfig>(),
     response: new Interceptors<LotaResponse>(),
   };
-  // deduplication tracking
+
   private readonly inFlight = new Map<string, AbortController>();
+
   constructor(config: LotaRequestConfig = {}) {
+    if (config.baseURL !== undefined) {
+      try {
+        new URL(config.baseURL);
+      } catch {
+        throw new LotaError(
+          `Invalid baseURL: "${config.baseURL}". Must be a valid absolute URL (e.g. "https://api.example.com").`,
+          null,
+          config,
+        );
+      }
+    }
     this.config = this.mergeConfig(config, {});
   }
 
@@ -33,17 +46,9 @@ export class Lota {
     config: LotaRequestConfig & { url: string },
   ): Promise<LotaResponse<T>> {
     const mergedConfig = this.mergeConfig(config);
-    // the chain is an ordered pipeline
-    // [request interceptors] → dispatchRequest → [response interceptors]
-    //
-    // request interceptors:  LotaRequestConfig  → LotaRequestConfig
-    // dispatchRequest:        LotaRequestConfig  → LotaResponse        (the bridge)
-    // response interceptors:  LotaResponse       → LotaResponse
-
     const chain: Array<InterceptorHandler<any>> = [
       { fulfilled: this.executeWithRetry.bind(this), rejected: undefined },
     ];
-
     this.interceptors.request.handlers.forEach((h) => {
       if (h) chain.unshift(h);
     });
@@ -58,9 +63,7 @@ export class Lota {
           try {
             return fulfilled(res);
           } catch (err) {
-            if (rejected) {
-              return rejected(err);
-            }
+            if (rejected) return rejected(err);
             return Promise.reject(err);
           }
         },
@@ -78,28 +81,35 @@ export class Lota {
   ): Promise<LotaResponse> {
     const retryCfg: RetryConfig | false =
       config.retry === false ? false : (config.retry ?? false);
+
     if (retryCfg === false || retryCfg.times <= 0) {
       return this.dispatchRequest(config);
     }
-    const maxTries = retryCfg.times;
+
+    const maxRetries = retryCfg.times;
     const signal =
       config.signal instanceof AbortSignal ? config.signal : undefined;
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= maxTries + 1; attempt++) {
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      const isLastAttempt = attempt === maxRetries + 1;
       try {
-        return await this.dispatchRequest(config);
+        let dispatchConfig: LotaRequestConfig;
+        if (attempt === 1) {
+          dispatchConfig = config;
+        } else {
+          const { dedupeKey: _dk, ...rest } = config;
+          dispatchConfig = rest;
+        }
+
+        return await this.dispatchRequest(dispatchConfig);
       } catch (err) {
-        lastError = err;
-        const isLastAttempt = attempt > maxTries;
-        // Never retry if: last attempt, signal aborted, or error type not retryable
         if (isLastAttempt || signal?.aborted || !shouldRetry(err, retryCfg)) {
           throw err;
         }
-        const delay = computeDelay(retryCfg, attempt);
-        await retryDelay(delay, signal);
+        await retryDelay(computeDelay(retryCfg, attempt), signal);
       }
     }
-    throw lastError;
+
+    throw new LotaError("Retry loop exited unexpectedly", null, config);
   }
 
   private async dispatchRequest(
@@ -111,33 +121,26 @@ export class Lota {
       params,
       arrayFormat,
       timeout,
-      retry: _retry, // retry config consumed by executeWithRetry, never pass to fetch
+      retry: _retry,
       dedupeKey,
-      data: _data, // already serialised into `body` by the method helpers
+      data: _data,
       validateStatus,
       responseType,
       signal: userSignal,
       ...nativeConfig
     } = config;
-    // URL is constructed here, after all request interceptors have run,
-    // so interceptor mutations to url / baseURL / params are respected.
-    const fullUrl = buildRequestUrl(url ?? "", baseURL, params, arrayFormat);
 
+    const fullUrl = buildRequestUrl(url ?? "", baseURL, params, arrayFormat);
     const abortController = new AbortController();
     if (dedupeKey) {
       const previous = this.inFlight.get(dedupeKey);
-      if (previous) {
-        // Abort the previous request it will throw LotaError("Request aborted")
-        // which CancelController.isCancelError() catches cleanly.
-        previous.abort();
-      }
+      if (previous) previous.abort();
       this.inFlight.set(dedupeKey, abortController);
     }
+
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    if (timeout) {
-      timeoutId = setTimeout(() => abortController.abort(), timeout);
-    }
-    // combine user supplied signal with timeout signal so both work independently.
+    if (timeout) timeoutId = setTimeout(() => abortController.abort(), timeout);
+
     const signal = userSignal
       ? AbortSignal.any([abortController.signal, userSignal])
       : abortController.signal;
@@ -149,34 +152,29 @@ export class Lota {
       });
       const contentType = response.headers.get("content-type");
       let responseData: unknown = null;
+
       try {
         const rt = responseType ?? "auto";
-        if (rt === "stream") {
-          // return the raw ReadableStream caller owns reading it.
-          // do not call any other body method after this or it will throw.
-          responseData = response.body;
-        } else if (rt === "blob") {
-          responseData = await response.blob();
-        } else if (rt === "arrayBuffer") {
+        if (rt === "stream") responseData = response.body;
+        else if (rt === "blob") responseData = await response.blob();
+        else if (rt === "arrayBuffer")
           responseData = await response.arrayBuffer();
-        } else if (rt === "text") {
-          responseData = await response.text();
-        } else if (rt === "json") {
-          const text = await response.text();
-          responseData = text ? JSON.parse(text) : {};
+        else if (rt === "text") responseData = await response.text();
+        else if (rt === "json") {
+          const t = await response.text();
+          responseData = t ? JSON.parse(t) : {};
         } else {
-          // 'auto' — sniff Content-Type
           if (contentType?.includes("application/json")) {
-            const text = await response.text();
-            responseData = text ? JSON.parse(text) : {};
+            const t = await response.text();
+            responseData = t ? JSON.parse(t) : {};
           } else {
             responseData = await response.text();
           }
         }
       } catch {
-        // malformed body keep null, HTTP error info is still preserved below.
         responseData = null;
       }
+
       const lotaResponse: LotaResponse = {
         data: responseData,
         status: response.status,
@@ -185,9 +183,7 @@ export class Lota {
         config: nativeConfig,
         rawResponse: response,
       };
-      // determine success using validateStatus if provided, otherwise the
-      // default behaviour matches fetch's own `response.ok` (200–299).
-      // This lets callers treat 304, 206, or any custom status as success.
+
       const isSuccess = validateStatus
         ? validateStatus(response.status)
         : response.ok;
@@ -210,7 +206,6 @@ export class Lota {
       throw new LotaError(message, null, config);
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
-      // always clean up whether the request succeeded, errored, or was aborted.
       if (dedupeKey && this.inFlight.get(dedupeKey) === abortController) {
         this.inFlight.delete(dedupeKey);
       }
@@ -229,22 +224,24 @@ export class Lota {
         : typeof base.timeout !== "undefined"
           ? { timeout: base.timeout }
           : {}),
-      // retry: per-request value takes full precedence (including `false`).
-      // If neither is set, no retry. we don't deep-merge a per-request
-      // { times: 1 } replaces the whole instance config, not just `times`.
       ...(typeof config.retry !== "undefined"
         ? { retry: config.retry }
         : typeof base.retry !== "undefined"
           ? { retry: base.retry }
           : {}),
-      // deep-merge headers so instance-level defaults are never silently dropped.
+      ...(typeof config.arrayFormat !== "undefined"
+        ? { arrayFormat: config.arrayFormat }
+        : typeof base.arrayFormat !== "undefined"
+          ? { arrayFormat: base.arrayFormat }
+          : {}),
       headers: {
-        ...(base?.headers ?? {}),
-        ...(config?.headers ?? {}),
+        ...(base.headers ?? {}),
+        ...(config.headers ?? {}),
       },
     };
   }
 }
+
 const NO_BODY_METHODS = [
   "get",
   "head",
@@ -276,14 +273,22 @@ BODY_METHODS.forEach((method) => {
     config: LotaRequestConfig = {},
   ): Promise<LotaResponse<any>> {
     const raw = data ?? config.data;
-    const { body, headers: bodyHeaders } = serializeBody(raw);
+    const { body, headers: bodyHeaders, deleteHeaders } = serializeBody(raw);
+    const mergedHeaders: Record<string, string> = {
+      ...bodyHeaders,
+      ...(config.headers ?? {}),
+    };
+    if (deleteHeaders?.length) {
+      const lower = deleteHeaders.map((h) => h.toLowerCase());
+      Object.keys(mergedHeaders).forEach((k) => {
+        if (lower.includes(k.toLowerCase())) delete mergedHeaders[k];
+      });
+    }
+
     return this.request({
       ...config,
       url,
-      headers: {
-        ...bodyHeaders,
-        ...(config.headers ?? {}),
-      },
+      headers: mergedHeaders,
       method: method.toUpperCase(),
       body,
     });
