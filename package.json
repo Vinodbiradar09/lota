@@ -1,5 +1,5 @@
 {
-  "name": "lota",
+  "name": "@corexs/lota",
   "version": "1.0.0",
   "description": "A lightweight TypeScript-first HTTP client built on fetch",
   "type": "module",
@@ -30,9 +30,10 @@
     "fetch",
     "client",
     "typescript",
-    "interceptors"
+    "interceptors",
+    "axios"
   ],
-  "author": "",
+  "author": "vinod09",
   "license": "ISC",
   "engines": {
     "node": ">=18.0.0"
