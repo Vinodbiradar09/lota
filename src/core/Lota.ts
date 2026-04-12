@@ -29,11 +29,19 @@ export class Lota {
 
   constructor(config: LotaRequestConfig = {}) {
     if (config.baseURL !== undefined) {
+      let parsedBase: URL;
       try {
-        new URL(config.baseURL);
+        parsedBase = new URL(config.baseURL);
       } catch {
         throw new LotaError(
-          `Invalid baseURL: "${config.baseURL}". Must be a valid absolute URL (e.g. "https://api.example.com").`,
+          `Invalid baseURL: "${config.baseURL}". Must be an absolute URL with http or https protocol.`,
+          null,
+          config,
+        );
+      }
+      if (parsedBase.protocol !== "http:" && parsedBase.protocol !== "https:") {
+        throw new LotaError(
+          `Invalid baseURL: "${config.baseURL}". Protocol must be http or https, got "${parsedBase.protocol}".`,
           null,
           config,
         );
@@ -108,7 +116,6 @@ export class Lota {
         await retryDelay(computeDelay(retryCfg, attempt), signal);
       }
     }
-
     throw new LotaError("Retry loop exited unexpectedly", null, config);
   }
 
@@ -127,8 +134,18 @@ export class Lota {
       validateStatus,
       responseType,
       signal: userSignal,
+      _deleteHeaders,
       ...nativeConfig
-    } = config;
+    } = config as any;
+
+    if (_deleteHeaders?.length && nativeConfig.headers) {
+      const lower = (_deleteHeaders as string[]).map((h: string) =>
+        h.toLowerCase(),
+      );
+      Object.keys(nativeConfig.headers).forEach((k: string) => {
+        if (lower.includes(k.toLowerCase())) delete nativeConfig.headers[k];
+      });
+    }
 
     const fullUrl = buildRequestUrl(url ?? "", baseURL, params, arrayFormat);
     const abortController = new AbortController();
@@ -291,6 +308,7 @@ BODY_METHODS.forEach((method) => {
       headers: mergedHeaders,
       method: method.toUpperCase(),
       body,
-    });
+      _deleteHeaders: deleteHeaders,
+    } as any);
   };
 });

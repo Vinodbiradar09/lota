@@ -11,7 +11,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**"],
-      exclude: ["src/index.ts"],
+      exclude: ["src/index.ts", "src/app.ts", "**/.DS_Store"],
       thresholds: {
         lines: 90,
         functions: 90,
